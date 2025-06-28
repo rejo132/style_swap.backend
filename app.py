@@ -14,7 +14,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'Uploads'
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
 
-CORS(app)  # Enable CORS for frontend integration
+CORS(app, supports_credentials=True)  # Enable CORS for frontend integration
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
@@ -66,22 +66,34 @@ def index():
 # Authentication Routes
 @app.route('/api/signup', methods=['POST'])
 def signup():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
+    username = request.form.get('username')
+    password = request.form.get('password')
+    file = request.files.get('profile_picture')
 
-    if not username or not password:
-        return jsonify({'error': 'Username and password are required'}), 400
+    if not username or not password or not file:
+        return jsonify({'error': 'Username, password, and profile picture are required'}), 400
 
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'Username already exists'}), 400
 
-    user = User(username=username)
+    if file and allowed_file(file.filename):
+        filename = f"{datetime.now(timezone.utc).timestamp()}_{secure_filename(file.filename)}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+    else:
+        return jsonify({'error': 'Invalid or missing profile picture'}), 400
+
+    user = User(username=username, profile_picture=filename)
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
-    session['user_id'] = user.id
-    return jsonify({'message': 'User created', 'user': {'id': user.id, 'username': user.username}}), 201
+
+    
+    return jsonify({'message': 'User created', 'user': {
+        'id': user.id,
+        'username': user.username,
+        'profile_picture': user.profile_picture
+    }}), 201
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -235,6 +247,37 @@ def get_profile():
         } for o in outfits]
     })
 
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+def update_user(user_id):
+    if 'user_id' not in session or session['user_id'] != user_id:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    user = User.query.get_or_404(user_id)
+    username = request.form.get('username')
+    password = request.form.get('password')
+    file = request.files.get('profile_picture')
+
+    if username:
+        if User.query.filter(User.username == username, User.id != user_id).first():
+            return jsonify({'error': 'Username already taken'}), 400
+        user.username = username
+
+    if password:
+        user.set_password(password)
+
+    if file and allowed_file(file.filename):
+        filename = f"{datetime.now(timezone.utc).timestamp()}_{secure_filename(file.filename)}"
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        user.profile_picture = filename
+
+    db.session.commit()
+    return jsonify({
+        'id': user.id,
+        'username': user.username,
+        'profile_picture': user.profile_picture
+    })
+
 # Search Route
 @app.route('/api/search', methods=['GET'])
 def search():
@@ -257,6 +300,16 @@ def search():
             'created_at': o.created_at.isoformat()
         } for o in outfits]
     })
+
+@app.route('/api/users/<int:user_id>', methods=['GET'])
+def get_user_by_id(user_id):
+    user = User.query.get_or_404(user_id)
+    return jsonify({
+        'id': user.id,
+        'username': user.username,
+        'profile_picture': user.profile_picture
+    })
+
 
 # Share Route
 @app.route('/api/outfits/<int:id>/share', methods=['GET'])
