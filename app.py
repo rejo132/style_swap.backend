@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timezone
@@ -12,6 +13,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///styleswap.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'Uploads'
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
+
+CORS(app)  # Enable CORS for frontend integration
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
@@ -55,7 +58,7 @@ class Rating(db.Model):
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-# Root Route (Optional, to avoid 404 on /)
+# Root Route
 @app.route('/')
 def index():
     return jsonify({'message': 'StyleSwap API is running'})
@@ -259,7 +262,6 @@ def search():
 @app.route('/api/outfits/<int:id>/share', methods=['GET'])
 def share_outfit(id):
     outfit = Outfit.query.get_or_404(id)
-    # Placeholder: Generate a shareable URL (replace with frontend URL)
     share_url = f"https://styleswap.example.com/outfits/{id}"
     return jsonify({'message': 'Share link generated', 'share_url': share_url})
 
